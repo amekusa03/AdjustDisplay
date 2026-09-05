@@ -1,0 +1,19 @@
+# Build directories
+build/
+bin/
+
+# CMake / IDE
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+.cmake/
+.vscode/
+.idea/
+
+# Qt moc / obj files
+*.moc
+moc_*.cpp
+*.o
+*.a
+*.so

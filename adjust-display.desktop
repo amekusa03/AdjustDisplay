@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AdjustDisplay
+GenericName=ディスプレイ調整ツール
+Comment=Ubuntu ディスプレイ視覚的キャリブレーション & テストパターン
+Exec=adjust-display
+Icon=video-display
+Terminal=false
+Categories=Settings;HardwareSettings;Utility;
+Keywords=display;monitor;calibration;gamma;brightness;contrast;

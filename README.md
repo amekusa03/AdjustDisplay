@@ -1,6 +1,6 @@
 # AdjustDisplay - Visual Display Calibration Tool
 
-[日本語版はこちら (README.jp)](README.jp)
+[日本語版はこちら (README.jp.md)](README.jp.md)
 
 AdjustDisplay is a Qt C++ desktop application designed for precise visual display calibration (brightness, contrast, gamma, and color balance) on Ubuntu and Linux environments.
 

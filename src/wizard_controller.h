@@ -19,6 +19,7 @@ public:
     void prevStep();
     void goToStep(int index);
     void reset();
+    void reloadSteps();
 
 signals:
     void stepChanged(int stepIndex, const WizardStepInfo &info);

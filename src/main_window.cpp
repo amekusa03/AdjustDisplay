@@ -1,93 +1,81 @@
 #include "main_window.h"
+#include "i18n.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
-#include <QSplitter>
-#include <QScrollArea>
 #include <QFrame>
 #include <QMessageBox>
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QScreen>
-#include <QIcon>
-#include <QStyle>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent),
-      m_screenManager(new ScreenManager(this)),
-      m_hardwareBridge(new HardwareBridge(this)),
-      m_wizard(new WizardController(this)) {
-    
-    setWindowTitle("Ubuntu ディスプレイ調整ツール (AdjustDisplay)");
-    resize(1020, 700);
-    setMinimumSize(880, 600);
-
+    : QMainWindow(parent)
+    , m_screenManager(new ScreenManager(this))
+    , m_hardwareBridge(new HardwareBridge(this))
+    , m_wizard(new WizardController(this))
+{
     setupUi();
     applyTheme();
 
     connect(m_screenManager, &ScreenManager::screensChanged, this, &MainWindow::refreshScreenList);
+    connect(m_hardwareBridge, &HardwareBridge::capabilitiesUpdated, this, &MainWindow::onHardwareCapsUpdated);
     connect(m_wizard, &WizardController::stepChanged, this, &MainWindow::onWizardStepChanged);
     connect(m_wizard, &WizardController::wizardFinished, this, [this]() {
-        QMessageBox::information(this, "調整完了", "すべての調整ステップが完了しました！\n快適なディスプレイ表示でお楽しみください。");
+        if (m_fullscreenWindow && m_fullscreenWindow->isVisible()) {
+            closeFullscreenPattern();
+        }
     });
 
-    connect(m_hardwareBridge, &HardwareBridge::capabilitiesUpdated, this, &MainWindow::onHardwareCapsUpdated);
+    connect(I18n::instance(), &I18n::languageChanged, this, &MainWindow::retranslateUi);
 
     refreshScreenList();
     m_wizard->reset();
+    retranslateUi();
 }
 
 MainWindow::~MainWindow() = default;
 
 void MainWindow::setupUi() {
+    setMinimumSize(960, 680);
+    resize(1020, 720);
+
     auto *central = new QWidget(this);
     setCentralWidget(central);
 
     auto *mainLayout = new QVBoxLayout(central);
-    mainLayout->setContentsMargins(18, 16, 18, 16);
-    mainLayout->setSpacing(14);
+    mainLayout->setContentsMargins(16, 16, 16, 16);
+    mainLayout->setSpacing(12);
 
-    // 1. Top Header Bar (Monitor Selection & Actions)
+    // 1. Top Header Bar: Screen Selector & Action Buttons & Language Selector
     auto *headerFrame = new QFrame(this);
     headerFrame->setObjectName("headerFrame");
     auto *headerLayout = new QHBoxLayout(headerFrame);
     headerLayout->setContentsMargins(14, 10, 14, 10);
-    headerLayout->setSpacing(12);
-
-    auto *logoLabel = new QLabel("🖥️", this);
-    logoLabel->setStyleSheet("font-size: 26px;");
-    headerLayout->addWidget(logoLabel);
-
-    auto *titleLayout = new QVBoxLayout();
-    titleLayout->setSpacing(2);
-    auto *appTitle = new QLabel("Ubuntu ディスプレイ調整ツール", this);
-    appTitle->setStyleSheet("font-size: 16px; font-weight: bold; color: #f8fafc;");
-    auto *appSub = new QLabel("高精度キャリブレーション & テストパターン", this);
-    appSub->setStyleSheet("font-size: 11px; color: #94a3b8;");
-    titleLayout->addWidget(appTitle);
-    titleLayout->addWidget(appSub);
-    headerLayout->addLayout(titleLayout);
-
-    headerLayout->addStretch(1);
-
-    auto *screenSelectLabel = new QLabel("対象ディスプレイ:", this);
-    screenSelectLabel->setStyleSheet("font-weight: bold; color: #cbd5e1;");
-    headerLayout->addWidget(screenSelectLabel);
+    headerLayout->setSpacing(10);
 
     m_screenCombo = new QComboBox(this);
-    m_screenCombo->setMinimumWidth(260);
-    headerLayout->addWidget(m_screenCombo);
+    m_screenCombo->setMinimumWidth(240);
+    headerLayout->addWidget(m_screenCombo, 1);
 
-    m_btnIdentify = new QPushButton("🎯 画面識別", this);
-    m_btnIdentify->setToolTip("選択中の画面に大きな識別番号を表示します");
+    m_btnIdentify = new QPushButton(this);
     headerLayout->addWidget(m_btnIdentify);
 
-    m_btnIdentifyAll = new QPushButton("✨ 全画面識別", this);
-    m_btnIdentifyAll->setToolTip("すべての画面に識別番号を同時に表示します");
+    m_btnIdentifyAll = new QPushButton(this);
     headerLayout->addWidget(m_btnIdentifyAll);
 
-    m_btnRefreshScreens = new QPushButton("🔄 再検出", this);
+    m_btnRefreshScreens = new QPushButton(this);
     headerLayout->addWidget(m_btnRefreshScreens);
+
+    // Language Selector
+    m_langCombo = new QComboBox(this);
+    m_langCombo->setFixedWidth(120);
+    m_langCombo->addItem("English", static_cast<int>(Language::English));
+    m_langCombo->addItem("日本語", static_cast<int>(Language::Japanese));
+
+    int currentLangIdx = (I18n::instance()->language() == Language::Japanese) ? 1 : 0;
+    m_langCombo->setCurrentIndex(currentLangIdx);
+    headerLayout->addWidget(m_langCombo);
 
     mainLayout->addWidget(headerFrame);
 
@@ -95,14 +83,15 @@ void MainWindow::setupUi() {
     connect(m_btnIdentify, &QPushButton::clicked, this, &MainWindow::identifyCurrentScreen);
     connect(m_btnIdentifyAll, &QPushButton::clicked, this, &MainWindow::identifyAllScreens);
     connect(m_btnRefreshScreens, &QPushButton::clicked, this, &MainWindow::refreshScreenList);
+    connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLanguageComboChanged);
 
     // 2. Main Tab Widget
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setObjectName("mainTabs");
 
-    m_tabWidget->addTab(createWizardTab(), "🧙‍♂️ ガイド付きウィザード");
-    m_tabWidget->addTab(createExplorerTab(), "🎨 パターン一覧・個別検査");
-    m_tabWidget->addTab(createHardwareTab(), "⚙️ ディスプレイ & DDC/CI 設定");
+    m_tabWidget->addTab(createWizardTab(), "");
+    m_tabWidget->addTab(createExplorerTab(), "");
+    m_tabWidget->addTab(createHardwareTab(), "");
 
     mainLayout->addWidget(m_tabWidget, 1);
 }
@@ -121,17 +110,12 @@ QWidget* MainWindow::createWizardTab() {
     leftLayout->setContentsMargins(10, 12, 10, 12);
     leftLayout->setSpacing(8);
 
-    auto *sidebarTitle = new QLabel("📋 調整ステップ", this);
-    sidebarTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #94a3b8;");
-    leftLayout->addWidget(sidebarTitle);
+    m_lblWizardSidebarTitle = new QLabel(this);
+    m_lblWizardSidebarTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #94a3b8;");
+    leftLayout->addWidget(m_lblWizardSidebarTitle);
 
     m_stepList = new QListWidget(this);
     m_stepList->setObjectName("wizardStepList");
-    const auto &steps = m_wizard->allSteps();
-    for (int i = 0; i < steps.size(); ++i) {
-        m_stepList->addItem(QString("%1. %2").arg(i + 1).arg(steps[i].title.split(' ')[0]));
-    }
-    m_stepList->setCurrentRow(0);
     leftLayout->addWidget(m_stepList, 1);
 
     connect(m_stepList, &QListWidget::currentRowChanged, this, [this](int row) {
@@ -150,7 +134,7 @@ QWidget* MainWindow::createWizardTab() {
     rightLayout->setSpacing(12);
 
     // Header in Wizard Page
-    m_wizardTitleLabel = new QLabel("黒レベル / 輝度の調整", this);
+    m_wizardTitleLabel = new QLabel(this);
     m_wizardTitleLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #60a5fa;");
     rightLayout->addWidget(m_wizardTitleLabel);
 
@@ -181,16 +165,16 @@ QWidget* MainWindow::createWizardTab() {
     auto *btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(12);
 
-    m_btnWizardPrev = new QPushButton("◀ 前のステップ", this);
+    m_btnWizardPrev = new QPushButton(this);
     btnLayout->addWidget(m_btnWizardPrev);
 
-    m_btnWizardFullscreen = new QPushButton("🖥️ 全画面で調整 (推奨)", this);
+    m_btnWizardFullscreen = new QPushButton(this);
     m_btnWizardFullscreen->setObjectName("primaryBtn");
     m_btnWizardFullscreen->setFixedHeight(40);
     m_btnWizardFullscreen->setStyleSheet("font-size: 14px; font-weight: bold;");
     btnLayout->addWidget(m_btnWizardFullscreen, 1);
 
-    m_btnWizardNext = new QPushButton("次のステップ ▶", this);
+    m_btnWizardNext = new QPushButton(this);
     btnLayout->addWidget(m_btnWizardNext);
 
     rightLayout->addLayout(btnLayout);
@@ -217,21 +201,22 @@ QWidget* MainWindow::createExplorerTab() {
 
     struct PatternCardData {
         PatternType type;
-        QString title;
-        QString desc;
+        const char *titleKey;
+        const char *descKey;
         QString icon;
     };
 
     const QVector<PatternCardData> cards = {
-        {PatternType::BlackLevel, "1. 黒レベル / 輝度 (Brightness)", "0%〜5%低輝度ステップと点滅ボックスによる暗部階調の基準調整", "🌑"},
-        {PatternType::WhiteLevel, "2. 白レベル / コントラスト (Contrast)", "95%〜100%ハイライト階調とRGB階調による白飛び・クリッピング防止", "☀️"},
-        {PatternType::Gamma22, "3. ガンマ 2.2 (Gamma 2.2)", "1px白黒ラスタラインと基準パッチ比較によるガンマ曲線調整", "📐"},
-        {PatternType::GrayRamp, "4. グレースケール & カラーバランス", "32階調ステップバー、滑らかな連続グラデーション、RGB原色リニアリティ", "🌈"},
-        {PatternType::Sharpness, "5. シャープネス & フォーカス", "1px白黒格子・市松模様による輪郭補正（ハロー/リンギング）の最適化", "🔍"},
-        {PatternType::ColorUniformity, "6. 色均一性 & ドット抜け検査", "単色（白・灰・黒・赤・緑・青）全画面表示によるムラ・常時点灯ドット検査", "🎨"},
-        {PatternType::GeometryFocus, "7. 画面比率 & オーバースキャン", "1:1ピクセルマッピング、ドット・バイ・ドット、外枠1px欠けの検査", "📏"}
+        {PatternType::BlackLevel, "card_black_title", "card_black_desc", "🌑"},
+        {PatternType::WhiteLevel, "card_white_title", "card_white_desc", "☀️"},
+        {PatternType::Gamma22, "card_gamma_title", "card_gamma_desc", "📐"},
+        {PatternType::GrayRamp, "card_gray_title", "card_gray_desc", "🌈"},
+        {PatternType::Sharpness, "card_sharp_title", "card_sharp_desc", "🔍"},
+        {PatternType::ColorUniformity, "card_unif_title", "card_unif_desc", "🎨"},
+        {PatternType::GeometryFocus, "card_geom_title", "card_geom_desc", "📏"}
     };
 
+    m_explorerCards.clear();
     int row = 0;
     int col = 0;
     for (const auto &card : cards) {
@@ -241,17 +226,16 @@ QWidget* MainWindow::createExplorerTab() {
         cardLayout->setContentsMargins(14, 14, 14, 14);
         cardLayout->setSpacing(8);
 
-        auto *title = new QLabel(QString("%1 %2").arg(card.icon, card.title), frame);
+        auto *title = new QLabel(frame);
         title->setStyleSheet("font-size: 14px; font-weight: bold; color: #60a5fa;");
         cardLayout->addWidget(title);
 
-        auto *desc = new QLabel(card.desc, frame);
+        auto *desc = new QLabel(frame);
         desc->setWordWrap(true);
         desc->setStyleSheet("color: #cbd5e1; font-size: 11px;");
         cardLayout->addWidget(desc, 1);
 
-        auto *btn = new QPushButton("全画面で表示", frame);
-        btn->setStyleSheet("background-color: #334155; color: white; padding: 6px; font-weight: bold; border-radius: 6px;");
+        auto *btn = new QPushButton(frame);
         PatternType pType = card.type;
         connect(btn, &QPushButton::clicked, this, [this, pType]() {
             launchFullscreenPattern(pType, false);
@@ -264,6 +248,8 @@ QWidget* MainWindow::createExplorerTab() {
             col = 0;
             row++;
         }
+
+        m_explorerCards.append({card.type, title, desc, btn});
     }
 
     scrollArea->setWidget(container);
@@ -277,61 +263,67 @@ QWidget* MainWindow::createHardwareTab() {
     layout->setSpacing(16);
 
     // Screen Info Box
-    auto *infoGroup = new QGroupBox("🖥️ ディスプレイ情報", tab);
-    auto *infoGrid = new QGridLayout(infoGroup);
+    m_groupScreenInfo = new QGroupBox(tab);
+    auto *infoGrid = new QGridLayout(m_groupScreenInfo);
     infoGrid->setContentsMargins(16, 16, 16, 16);
     infoGrid->setHorizontalSpacing(24);
     infoGrid->setVerticalSpacing(10);
 
-    infoGrid->addWidget(new QLabel("モニタ名 / 型番:", infoGroup), 0, 0);
-    m_lblScreenModel = new QLabel("-", infoGroup);
+    m_lblScreenModelHeader = new QLabel(m_groupScreenInfo);
+    infoGrid->addWidget(m_lblScreenModelHeader, 0, 0);
+    m_lblScreenModel = new QLabel("-", m_groupScreenInfo);
     m_lblScreenModel->setStyleSheet("font-weight: bold; color: #60a5fa;");
     infoGrid->addWidget(m_lblScreenModel, 0, 1);
 
-    infoGrid->addWidget(new QLabel("解像度 / 位置:", infoGroup), 1, 0);
-    m_lblScreenRes = new QLabel("-", infoGroup);
+    m_lblScreenResHeader = new QLabel(m_groupScreenInfo);
+    infoGrid->addWidget(m_lblScreenResHeader, 1, 0);
+    m_lblScreenRes = new QLabel("-", m_groupScreenInfo);
     infoGrid->addWidget(m_lblScreenRes, 1, 1);
 
-    infoGrid->addWidget(new QLabel("リフレッシュレート:", infoGroup), 2, 0);
-    m_lblScreenRate = new QLabel("-", infoGroup);
+    m_lblScreenRateHeader = new QLabel(m_groupScreenInfo);
+    infoGrid->addWidget(m_lblScreenRateHeader, 2, 0);
+    m_lblScreenRate = new QLabel("-", m_groupScreenInfo);
     infoGrid->addWidget(m_lblScreenRate, 2, 1);
 
-    infoGrid->addWidget(new QLabel("DPI / スケール:", infoGroup), 3, 0);
-    m_lblScreenDpi = new QLabel("-", infoGroup);
+    m_lblScreenDpiHeader = new QLabel(m_groupScreenInfo);
+    infoGrid->addWidget(m_lblScreenDpiHeader, 3, 0);
+    m_lblScreenDpi = new QLabel("-", m_groupScreenInfo);
     infoGrid->addWidget(m_lblScreenDpi, 3, 1);
 
-    layout->addWidget(infoGroup);
+    layout->addWidget(m_groupScreenInfo);
 
     // Hardware Control Box
-    auto *hwGroup = new QGroupBox("🎛️ ハードウェア / ソフトウェア制御 (DDC/CI & XRandR)", tab);
-    auto *hwLayout = new QVBoxLayout(hwGroup);
+    m_groupHwCtrl = new QGroupBox(tab);
+    auto *hwLayout = new QVBoxLayout(m_groupHwCtrl);
     hwLayout->setContentsMargins(16, 16, 16, 16);
     hwLayout->setSpacing(14);
 
-    m_lblDdcStatus = new QLabel("ステータス: 確認中...", hwGroup);
+    m_lblDdcStatus = new QLabel(m_groupHwCtrl);
     m_lblDdcStatus->setStyleSheet("color: #94a3b8;");
     hwLayout->addWidget(m_lblDdcStatus);
 
     // Brightness slider
     auto *brightLayout = new QHBoxLayout();
-    brightLayout->addWidget(new QLabel("輝度 (Brightness):", hwGroup));
-    m_sliderBrightness = new QSlider(Qt::Horizontal, hwGroup);
+    m_lblBrightnessHeader = new QLabel(m_groupHwCtrl);
+    brightLayout->addWidget(m_lblBrightnessHeader);
+    m_sliderBrightness = new QSlider(Qt::Horizontal, m_groupHwCtrl);
     m_sliderBrightness->setRange(0, 100);
     m_sliderBrightness->setValue(50);
     brightLayout->addWidget(m_sliderBrightness, 1);
-    m_lblBrightnessVal = new QLabel("50%", hwGroup);
+    m_lblBrightnessVal = new QLabel("50%", m_groupHwCtrl);
     m_lblBrightnessVal->setFixedWidth(45);
     brightLayout->addWidget(m_lblBrightnessVal);
     hwLayout->addLayout(brightLayout);
 
     // Contrast slider
     auto *contrastLayout = new QHBoxLayout();
-    contrastLayout->addWidget(new QLabel("コントラスト (Contrast):", hwGroup));
-    m_sliderContrast = new QSlider(Qt::Horizontal, hwGroup);
+    m_lblContrastHeader = new QLabel(m_groupHwCtrl);
+    contrastLayout->addWidget(m_lblContrastHeader);
+    m_sliderContrast = new QSlider(Qt::Horizontal, m_groupHwCtrl);
     m_sliderContrast->setRange(0, 100);
     m_sliderContrast->setValue(50);
     contrastLayout->addWidget(m_sliderContrast, 1);
-    m_lblContrastVal = new QLabel("50%", hwGroup);
+    m_lblContrastVal = new QLabel("50%", m_groupHwCtrl);
     m_lblContrastVal->setFixedWidth(45);
     contrastLayout->addWidget(m_lblContrastVal);
     hwLayout->addLayout(contrastLayout);
@@ -339,20 +331,113 @@ QWidget* MainWindow::createHardwareTab() {
     connect(m_sliderBrightness, &QSlider::valueChanged, this, &MainWindow::onBrightnessSliderMoved);
     connect(m_sliderContrast, &QSlider::valueChanged, this, &MainWindow::onContrastSliderMoved);
 
-    m_btnResetSoftware = new QPushButton("ソフトウェア補正 (ガンマ/輝度) をデフォルトにリセット", hwGroup);
+    m_btnResetSoftware = new QPushButton(m_groupHwCtrl);
     connect(m_btnResetSoftware, &QPushButton::clicked, this, [this]() {
+        auto *i18n = I18n::instance();
         int idx = m_screenCombo->currentIndex();
         auto screens = m_screenManager->getScreenList();
         QString name = (idx >= 0 && idx < screens.size()) ? screens[idx].name : QString();
         m_hardwareBridge->resetSoftwareSettings(name);
-        QMessageBox::information(this, "リセット完了", "XRandR ソフトウェア設定をデフォルト (1.0) に戻しました。");
+        QMessageBox::information(this, i18n->t("hw_dlg_reset_title"), i18n->t("hw_dlg_reset_msg"));
     });
     hwLayout->addWidget(m_btnResetSoftware);
 
-    layout->addWidget(hwGroup);
+    layout->addWidget(m_groupHwCtrl);
     layout->addStretch(1);
 
     return tab;
+}
+
+void MainWindow::onLanguageComboChanged(int index) {
+    Language lang = static_cast<Language>(m_langCombo->itemData(index).toInt());
+    I18n::instance()->setLanguage(lang);
+}
+
+void MainWindow::retranslateUi() {
+    auto *i18n = I18n::instance();
+
+    // Window Title & App
+    setWindowTitle(i18n->t("app_title"));
+
+    // Header buttons
+    m_btnIdentify->setText(i18n->t("btn_identify"));
+    m_btnIdentify->setToolTip(i18n->t("btn_identify_tip"));
+    m_btnIdentifyAll->setText(i18n->t("btn_identify_all"));
+    m_btnIdentifyAll->setToolTip(i18n->t("btn_identify_all_tip"));
+    m_btnRefreshScreens->setText(i18n->t("btn_refresh"));
+
+    // Language combo sync
+    int targetIdx = (i18n->language() == Language::Japanese) ? 1 : 0;
+    if (m_langCombo->currentIndex() != targetIdx) {
+        m_langCombo->blockSignals(true);
+        m_langCombo->setCurrentIndex(targetIdx);
+        m_langCombo->blockSignals(false);
+    }
+
+    // Tabs
+    m_tabWidget->setTabText(0, i18n->t("tab_wizard"));
+    m_tabWidget->setTabText(1, i18n->t("tab_explorer"));
+    m_tabWidget->setTabText(2, i18n->t("tab_hardware"));
+
+    // Wizard Tab
+    m_lblWizardSidebarTitle->setText(i18n->t("wizard_sidebar_title"));
+    m_btnWizardPrev->setText(i18n->t("btn_wizard_prev"));
+    m_btnWizardFullscreen->setText(i18n->t("btn_wizard_fullscreen"));
+
+    // Step List
+    int curRow = m_stepList->currentRow();
+    m_stepList->blockSignals(true);
+    m_stepList->clear();
+    const char* stepKeys[] = {
+        "step1_short", "step2_short", "step3_short",
+        "step4_short", "step5_short", "step6_short", "step7_short"
+    };
+    for (int i = 0; i < 7; ++i) {
+        m_stepList->addItem(i18n->t(stepKeys[i]));
+    }
+    if (curRow >= 0 && curRow < m_stepList->count()) {
+        m_stepList->setCurrentRow(curRow);
+    } else {
+        m_stepList->setCurrentRow(0);
+    }
+    m_stepList->blockSignals(false);
+
+    // Update wizard current step labels
+    const auto &curInfo = m_wizard->currentStepInfo();
+    onWizardStepChanged(m_wizard->currentStepIndex(), curInfo);
+
+    // Explorer cards
+    const char* cardTitles[] = {
+        "card_black_title", "card_white_title", "card_gamma_title",
+        "card_gray_title", "card_sharp_title", "card_unif_title", "card_geom_title"
+    };
+    const char* cardDescs[] = {
+        "card_black_desc", "card_white_desc", "card_gamma_desc",
+        "card_gray_desc", "card_sharp_desc", "card_unif_desc", "card_geom_desc"
+    };
+    const QString icons[] = {"🌑", "☀️", "📐", "🌈", "🔍", "🎨", "📏"};
+
+    for (int i = 0; i < m_explorerCards.size() && i < 7; ++i) {
+        m_explorerCards[i].titleLabel->setText(QString("%1 %2").arg(icons[i], i18n->t(cardTitles[i])));
+        m_explorerCards[i].descLabel->setText(i18n->t(cardDescs[i]));
+        m_explorerCards[i].actionBtn->setText(i18n->t("btn_open_fullscreen"));
+    }
+
+    // Hardware Tab
+    m_groupScreenInfo->setTitle(i18n->t("hw_info_group"));
+    m_lblScreenModelHeader->setText(i18n->t("hw_lbl_model"));
+    m_lblScreenResHeader->setText(i18n->t("hw_lbl_res"));
+    m_lblScreenRateHeader->setText(i18n->t("hw_lbl_rate"));
+    m_lblScreenDpiHeader->setText(i18n->t("hw_lbl_dpi"));
+
+    m_groupHwCtrl->setTitle(i18n->t("hw_ctrl_group"));
+    m_lblBrightnessHeader->setText(i18n->t("hw_lbl_brightness"));
+    m_lblContrastHeader->setText(i18n->t("hw_lbl_contrast"));
+    m_btnResetSoftware->setText(i18n->t("hw_btn_reset_sw"));
+
+    // Refresh dynamic info
+    updateScreenDetails();
+    onHardwareCapsUpdated(m_hardwareBridge->capabilities());
 }
 
 void MainWindow::applyTheme() {
@@ -480,6 +565,9 @@ void MainWindow::applyTheme() {
 }
 
 void MainWindow::refreshScreenList() {
+    auto *i18n = I18n::instance();
+    int currentSelectedIdx = m_screenCombo->currentIndex();
+
     m_screenCombo->blockSignals(true);
     m_screenCombo->clear();
 
@@ -490,13 +578,17 @@ void MainWindow::refreshScreenList() {
                            .arg(s.geometry.width())
                            .arg(s.geometry.height())
                            .arg(s.refreshRate)
-                           .arg(s.isPrimary ? "(プライマリ)" : "");
+                           .arg(s.isPrimary ? i18n->t("screen_primary_tag") : "");
         m_screenCombo->addItem(text, s.index);
     }
 
     m_screenCombo->blockSignals(false);
     if (!screens.isEmpty()) {
-        m_screenCombo->setCurrentIndex(m_screenManager->getPrimaryScreenIndex());
+        if (currentSelectedIdx >= 0 && currentSelectedIdx < screens.size()) {
+            m_screenCombo->setCurrentIndex(currentSelectedIdx);
+        } else {
+            m_screenCombo->setCurrentIndex(m_screenManager->getPrimaryScreenIndex());
+        }
     }
 
     updateScreenDetails();
@@ -508,26 +600,28 @@ void MainWindow::onScreenSelected(int index) {
 }
 
 void MainWindow::updateScreenDetails() {
+    auto *i18n = I18n::instance();
     int idx = m_screenCombo->currentIndex();
     auto screens = m_screenManager->getScreenList();
     if (idx < 0 || idx >= screens.size()) return;
 
     const auto &s = screens[idx];
     m_lblScreenModel->setText(QString("%1 %2").arg(s.manufacturer, s.model).trimmed());
-    m_lblScreenRes->setText(QString("%1 x %2 (位置: X=%3, Y=%4)")
+    m_lblScreenRes->setText(i18n->t("hw_val_res")
                                 .arg(s.geometry.width())
                                 .arg(s.geometry.height())
                                 .arg(s.geometry.x())
                                 .arg(s.geometry.y()));
-    m_lblScreenRate->setText(QString("%1 Hz (色深度: %2 bit)").arg(s.refreshRate).arg(s.depth));
-    m_lblScreenDpi->setText(QString("DPI: %1 (スケール: %2x)").arg(qRound(s.logicalDotsPerInch)).arg(s.devicePixelRatio));
+    m_lblScreenRate->setText(i18n->t("hw_val_rate").arg(s.refreshRate).arg(s.depth));
+    m_lblScreenDpi->setText(i18n->t("hw_val_dpi").arg(qRound(s.logicalDotsPerInch)).arg(s.devicePixelRatio));
 
     m_hardwareBridge->probeCapabilities(s.name);
 }
 
 void MainWindow::onHardwareCapsUpdated(const HardwareCapabilities &caps) {
+    auto *i18n = I18n::instance();
     if (caps.hasDdcUtil && caps.ddcResponsive) {
-        m_lblDdcStatus->setText("✅ DDC/CI 連携可能 (モニタ内部パラメータを直接制御できます)");
+        m_lblDdcStatus->setText(i18n->t("hw_status_ddc_ok"));
         m_lblDdcStatus->setStyleSheet("color: #4ade80; font-weight: bold;");
         m_sliderBrightness->setEnabled(true);
         m_sliderContrast->setEnabled(true);
@@ -540,12 +634,12 @@ void MainWindow::onHardwareCapsUpdated(const HardwareCapabilities &caps) {
             m_lblContrastVal->setText(QString("%1%").arg(caps.currentContrast));
         }
     } else if (caps.hasXrandr) {
-        m_lblDdcStatus->setText("⚠️ DDC/CI不可 (XRandR ソフトウェア補正またはモニタOSDボタンを使用してください)");
+        m_lblDdcStatus->setText(i18n->t("hw_status_xrandr"));
         m_lblDdcStatus->setStyleSheet("color: #fbbf24; font-weight: bold;");
         m_sliderBrightness->setEnabled(true);
         m_sliderContrast->setEnabled(false);
     } else {
-        m_lblDdcStatus->setText("ℹ️ モニタOSD手動調整モード (モニタ本体の操作ボタンで調整してください)");
+        m_lblDdcStatus->setText(i18n->t("hw_status_manual"));
         m_lblDdcStatus->setStyleSheet("color: #94a3b8;");
         m_sliderBrightness->setEnabled(false);
         m_sliderContrast->setEnabled(false);
@@ -575,6 +669,7 @@ void MainWindow::identifyAllScreens() {
 }
 
 void MainWindow::onWizardStepChanged(int stepIndex, const WizardStepInfo &info) {
+    auto *i18n = I18n::instance();
     if (m_stepList->currentRow() != stepIndex) {
         m_stepList->setCurrentRow(stepIndex);
     }
@@ -587,7 +682,7 @@ void MainWindow::onWizardStepChanged(int stepIndex, const WizardStepInfo &info) 
     m_previewPatternWidget->setUniformityColor(info.defaultUniformityColor);
 
     m_btnWizardPrev->setEnabled(stepIndex > 0);
-    m_btnWizardNext->setText(stepIndex == m_wizard->totalSteps() - 1 ? "完了 🎉" : "次のステップ ▶");
+    m_btnWizardNext->setText(stepIndex == m_wizard->totalSteps() - 1 ? i18n->t("btn_wizard_finish") : i18n->t("btn_wizard_next"));
 
     if (m_fullscreenWindow && m_fullscreenPatternWidget && m_isFullscreenWizard) {
         m_fullscreenPatternWidget->setPatternType(info.patternType);
@@ -598,6 +693,7 @@ void MainWindow::onWizardStepChanged(int stepIndex, const WizardStepInfo &info) 
 }
 
 void MainWindow::launchFullscreenPattern(PatternType type, bool inWizardMode) {
+    auto *i18n = I18n::instance();
     m_isFullscreenWizard = inWizardMode;
 
     if (!m_fullscreenWindow) {
@@ -638,7 +734,7 @@ void MainWindow::launchFullscreenPattern(PatternType type, bool inWizardMode) {
         m_fullscreenPatternWidget->setStepNavigation(m_wizard->currentStepIndex(), m_wizard->totalSteps());
     } else {
         m_fullscreenPatternWidget->setPatternType(type);
-        m_fullscreenPatternWidget->setGuideInfo("テストパターン表示中", "キーボードの [Esc] で終了、[F] で全画面/ウィンドウ切り替え", "");
+        m_fullscreenPatternWidget->setGuideInfo(i18n->t("hud_single_title"), i18n->t("hud_single_desc"), "");
         m_fullscreenPatternWidget->setStepNavigation(-1, -1);
     }
 

@@ -1,44 +1,50 @@
-# Ubuntu ディスプレイ調整ツール (AdjustDisplay)
+# AdjustDisplay - Visual Display Calibration Tool
 
-Ubuntu Linux 環境におけるディスプレイの視覚的キャリブレーション（輝度、コントラスト、ガンマ、カラーバランス）を高精度に行うための Qt C++ デスクトップアプリケーションです。
+[日本語版はこちら (README.jp)](README.jp)
 
-## 主な機能
+AdjustDisplay is a Qt C++ desktop application designed for precise visual display calibration (brightness, contrast, gamma, and color balance) on Ubuntu and Linux environments.
 
-1. **マルチディスプレイ検出 & 画面識別**
-   - 接続されている全ディスプレイ（解像度、リフレッシュレート、DPI、色深度等）を検出
-   - 「画面識別」機能により、対象モニタに大きな識別バナーをオーバーレイ表示
+## Features
 
-2. **高精度テストパターン描画エンジン**
-   - **黒レベル / 輝度 (Brightness)**: 0%〜5% 低輝度ステップと点滅テストブロックで暗部階調の基準を調整
-   - **白レベル / コントラスト (Contrast)**: 95%〜100% ハイライト階調と各色ハイライトバーによる白飛び防止
-   - **ガンマ 2.2 (Gamma 2.2)**: 1px 白黒等幅ラスタストライプと基準階調パッチによるトーンカーブ調整
-   - **グレースケール & カラーバランス**: 32階調ステップバー、滑らかな連続グラデーション、RGB原色階調
-   - **シャープネス & フォーカス**: 1px 縦横ライン・チェッカーボードによるエッジ輪郭（ハロー/リンギング）の最適化
-   - **色均一性 & ドット抜け検査**: 単色（白・灰・黒・赤・緑・青・シアン・マゼンタ・黄）全画面表示
-   - **画面比率 & オーバースキャン**: 1:1 ピクセルマッピング、ドット・バイ・ドット、外枠1px欠けの検査
+1. **Multi-Display Detection & Screen Identification**
+   - Automatically detects connected displays (resolution, refresh rate, DPI, color depth, geometry).
+   - "Identify" feature overlays large numbered banners on target monitors.
 
-3. **ステップバイステップ ウィザード**
-   - ガイドに沿って順に進めるだけで最適なモニタ設定（OSD操作手順の案内付き）が完了
-   - キーボードショートカット (`Space`/`Enter` で次へ、`Backspace`/`Left` で前へ、`Esc` で戻る、`F` で全画面切替、`H` でガイド表示切替、`C` で色切り替え)
+2. **High-Precision Test Pattern Rendering Engine**
+   - **Black Level / Brightness**: 0% to 5% low-luminance stepped bars with blinking test blocks to set the shadow threshold.
+   - **White Level / Contrast**: 95% to 100% highlight bars and RGB channel highlights to prevent highlight clipping.
+   - **Gamma 2.2**: 1px alternating black/white raster stripes against luminance reference patches for standard sRGB tone curve alignment.
+   - **Grayscale & Color Balance**: 32-step grayscale gradient bar, continuous 8-bit ramp, and primary RGB linearity inspection.
+   - **Sharpness & Focus**: 1px horizontal/vertical lines and checkerboards to eliminate ringing, halos, and moire artifacts.
+   - **Color Uniformity & Dead Pixel Check**: Fullscreen pure colors (White, Gray 50%, Black, Red, Green, Blue, Cyan, Magenta, Yellow) to detect vignetting, tinting, and pixel defects.
+   - **Screen Ratio & Overscan**: 1:1 pixel mapping, dot-by-dot verification, and 1px outer frame clipping inspection.
 
-4. **DDC/CI & XRandR ハードウェア/ソフトウェア連携**
-   - `ddcutil` サポート環境ではモニタ内部の輝度・コントラストを直接スライダーから制御可能
-   - X11/XRandR 環境でのソフトウェア補正および手動 OSD 案内モードへの自動フォールバック
+3. **Step-by-Step Guided Wizard**
+   - Streamlined calibration workflow with actionable monitor OSD adjustment guidance.
+   - Intuitive keyboard shortcuts (`Space`/`Enter`/`Right` for Next, `Backspace`/`Left` for Previous, `Esc` to Exit, `F` to toggle Fullscreen, `H` to toggle HUD guide, `C` to cycle colors).
 
-## ビルド方法
+4. **Hardware & Software Integration (DDC/CI & XRandR)**
+   - Direct monitor hardware parameter control (Brightness & Contrast) via `ddcutil` where supported.
+   - Automatic fallback to XRandR software calibration or manual monitor OSD mode.
 
-### 必要パッケージ
+5. **Bilingual Support (English / Japanese)**
+   - Dynamic real-time switching between English and Japanese from the UI header.
+   - Automatically detects system locale and remembers user language preference.
+
+## Build Instructions
+
+### Prerequisites
 ```bash
 sudo apt update
 sudo apt install build-essential cmake ninja-build qtbase5-dev libqt5widgets5
 ```
-*(ddcutil によるハードウェア直接制御を使用する場合は `sudo apt install ddcutil` も推奨)*
+*(Installing `ddcutil` via `sudo apt install ddcutil` is recommended for direct hardware control)*
 
-### コンパイル & 実行
+### Compile & Run
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
-# アプリケーションの起動
+# Launch application
 ./build/adjust-display
 ```

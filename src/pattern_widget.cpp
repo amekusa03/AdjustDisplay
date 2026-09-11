@@ -1,20 +1,24 @@
 #include "pattern_widget.h"
+#include "i18n.h"
+#include <QPainter>
+#include <QPainterPath>
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QPainterPath>
-#include <QFontMetrics>
-#include <cmath>
+#include <QApplication>
+#include <QScreen>
+#include <QtMath>
 
 PatternWidget::PatternWidget(QWidget *parent) : QWidget(parent) {
-    setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setAttribute(Qt::WA_OpaquePaintEvent);
+    setMouseTracking(true);
 
     m_hudFadeTimer.setSingleShot(true);
-    m_hudFadeTimer.setInterval(5000); // 5 seconds of inactivity fades HUD
+    m_hudFadeTimer.setInterval(5000);
     connect(&m_hudFadeTimer, &QTimer::timeout, this, [this]() {
-        // When in wizard mode, we can keep HUD subtle or toggleable
-        update();
+        if (m_hudVisible) {
+            m_hudVisible = false;
+            update();
+        }
     });
 
     m_blinkTimer.setInterval(600);
@@ -25,6 +29,10 @@ PatternWidget::PatternWidget(QWidget *parent) : QWidget(parent) {
         }
     });
     m_blinkTimer.start();
+
+    connect(I18n::instance(), &I18n::languageChanged, this, [this]() {
+        update();
+    });
 }
 
 PatternWidget::~PatternWidget() = default;
@@ -99,6 +107,7 @@ void PatternWidget::paintEvent(QPaintEvent *) {
 }
 
 void PatternWidget::drawBlackLevelPattern(QPainter &p) {
+    auto *i18n = I18n::instance();
     // Pure black background
     p.fillRect(rect(), QColor(0, 0, 0));
 
@@ -113,11 +122,11 @@ void PatternWidget::drawBlackLevelPattern(QPainter &p) {
     p.setPen(QColor(160, 160, 160));
     QFont font("SansSerif", 14, QFont::Bold);
     p.setFont(font);
-    p.drawText(QRect(0, 40, w, 30), Qt::AlignCenter, "黒レベル / 輝度 (Brightness) 調整パターン");
+    p.drawText(QRect(0, 40, w, 30), Qt::AlignCenter, i18n->t("pat_black_title"));
 
     p.setFont(QFont("SansSerif", 11));
     p.setPen(QColor(120, 120, 120));
-    p.drawText(QRect(0, 75, w, 25), Qt::AlignCenter, "※ 0%（完全な黒）は背景と同化し、1%〜2%が「かろうじて識別できる」状態にモニタの輝度（Brightness）を調整してください。");
+    p.drawText(QRect(0, 75, w, 25), Qt::AlignCenter, i18n->t("pat_black_desc"));
 
     // Stepped low-luminance bars: 0%, 0.5%, 1%, 2%, 3%, 4%, 5%, 8%, 10%
     const QVector<QPair<double, QString>> steps = {
@@ -175,10 +184,11 @@ void PatternWidget::drawBlackLevelPattern(QPainter &p) {
     p.drawRect(blinkX2, blinkY, boxSize, boxSize);
 
     p.setPen(QColor(90, 90, 90));
-    p.drawText(QRect(0, blinkY + boxSize + 10, w, 20), Qt::AlignCenter, "点滅テストボックス (RGB 2 / RGB 4 - 点滅が視認できれば暗部階調は良好)");
+    p.drawText(QRect(0, blinkY + boxSize + 10, w, 20), Qt::AlignCenter, i18n->t("pat_black_blink"));
 }
 
 void PatternWidget::drawWhiteLevelPattern(QPainter &p) {
+    auto *i18n = I18n::instance();
     // Pure white background (RGB 255, 255, 255)
     p.fillRect(rect(), QColor(255, 255, 255));
 
@@ -186,12 +196,13 @@ void PatternWidget::drawWhiteLevelPattern(QPainter &p) {
     int h = height();
 
     p.setPen(QColor(50, 50, 50));
-    p.setFont(QFont("SansSerif", 14, QFont::Bold));
-    p.drawText(QRect(0, 40, w, 30), Qt::AlignCenter, "白レベル / コントラスト (Contrast) 調整パターン");
+    QFont font("SansSerif", 14, QFont::Bold);
+    p.setFont(font);
+    p.drawText(QRect(0, 40, w, 30), Qt::AlignCenter, i18n->t("pat_white_title"));
 
     p.setFont(QFont("SansSerif", 11));
     p.setPen(QColor(90, 90, 90));
-    p.drawText(QRect(0, 75, w, 25), Qt::AlignCenter, "※ 100%（完全な白）と99%〜99.6%（RGB 254）の境界が識別できる限界までモニタのコントラストを調整してください。");
+    p.drawText(QRect(0, 75, w, 25), Qt::AlignCenter, i18n->t("pat_white_desc"));
 
     // Stepped high-luminance highlight bars
     const QVector<QPair<int, QString>> steps = {
@@ -232,7 +243,7 @@ void PatternWidget::drawWhiteLevelPattern(QPainter &p) {
     int colBarH = 26;
     int colBarY = startY + barHeight + 60;
     int colBarW = totalBarsWidth;
-    
+
     // Draw RGB gradient stripes near 255
     QLinearGradient rGrad(startX, 0, startX + colBarW, 0);
     rGrad.setColorAt(0, QColor(220, 255, 255));
@@ -248,181 +259,215 @@ void PatternWidget::drawWhiteLevelPattern(QPainter &p) {
     bGrad.setColorAt(0, QColor(255, 255, 220));
     bGrad.setColorAt(1, QColor(255, 255, 255));
     p.fillRect(QRect(startX, colBarY + 60, colBarW, colBarH), bGrad);
-
-    p.setPen(QColor(100, 100, 100));
-    p.drawText(QRect(0, colBarY + 95, w, 20), Qt::AlignCenter, "各色ハイライト階調 (RGB各色で白飛び・色転びが生じていないか確認)");
 }
 
 void PatternWidget::drawGamma22Pattern(QPainter &p) {
-    p.fillRect(rect(), QColor(18, 18, 18));
-
+    auto *i18n = I18n::instance();
     int w = width();
     int h = height();
 
-    p.setPen(QColor(240, 240, 240));
-    p.setFont(QFont("SansSerif", 14, QFont::Bold));
-    p.drawText(QRect(0, 30, w, 30), Qt::AlignCenter, "ガンマ 2.2 (Gamma 2.2) 調整パターン");
-
-    p.setFont(QFont("SansSerif", 11));
-    p.setPen(QColor(170, 170, 170));
-    p.drawText(QRect(0, 65, w, 25), Qt::AlignCenter, "※ 画面から1mほど離れるか目を細めて見たとき、中央の「2.2」パッチが白黒ストライプ背景と同化して見えるのが理想です。");
-
-    int patternW = qMin(720, w - 80);
-    int patternH = qMin(320, h - 220);
-    int startX = (w - patternW) / 2;
-    int startY = (h - patternH) / 2;
-
-    // Background 1-pixel alternating black/white raster
-    // Create alternating line pattern image for high performance & accuracy
-    QImage rasterImg(patternW, patternH, QImage::Format_RGB32);
-    for (int y = 0; y < patternH; ++y) {
-        QRgb color = (y % 2 == 0) ? qRgb(255, 255, 255) : qRgb(0, 0, 0);
-        QRgb *scanLine = reinterpret_cast<QRgb*>(rasterImg.scanLine(y));
-        for (int x = 0; x < patternW; ++x) {
-            scanLine[x] = color;
+    // 1px alternating horizontal black and white raster background (50% luminance average)
+    QImage raster(w, h, QImage::Format_RGB32);
+    for (int y = 0; y < h; ++y) {
+        QRgb col = (y % 2 == 0) ? qRgb(255, 255, 255) : qRgb(0, 0, 0);
+        QRgb *scanLine = reinterpret_cast<QRgb*>(raster.scanLine(y));
+        for (int x = 0; x < w; ++x) {
+            scanLine[x] = col;
         }
     }
-    p.drawImage(startX, startY, rasterImg);
+    p.drawImage(0, 0, raster);
 
-    // Overlaid Gamma Comparison Patches
-    // Linear 50% luminance: RGB = 255 * (0.5)^(1/gamma)
-    const QVector<QPair<double, QString>> gammaSteps = {
-        {1.8, "γ 1.8\n(174)"},
-        {2.0, "γ 2.0\n(180)"},
-        {2.2, "γ 2.2 ★\n(186)"},
-        {2.4, "γ 2.4\n(191)"},
-        {2.6, "γ 2.6\n(196)"}
+    // Dark header bar for text contrast
+    p.fillRect(QRect(0, 20, w, 80), QColor(0, 0, 0, 210));
+
+    p.setPen(QColor(255, 255, 255));
+    p.setFont(QFont("SansSerif", 14, QFont::Bold));
+    p.drawText(QRect(0, 25, w, 30), Qt::AlignCenter, i18n->t("pat_gamma_title"));
+
+    p.setFont(QFont("SansSerif", 10));
+    p.setPen(QColor(200, 200, 200));
+    p.drawText(QRect(0, 55, w, 35), Qt::AlignCenter, i18n->t("pat_gamma_desc"));
+
+    // Gamma patches: 1.8, 2.0, 2.2 (Standard), 2.4, 2.6
+    // Theoretical 50% relative luminance mapped to 8-bit sRGB value: val = 255 * (0.5)^(1/gamma)
+    struct GammaRef {
+        double gamma;
+        int grayVal;
+        bool isTarget;
     };
 
-    int patchCount = gammaSteps.size();
-    int patchW = patternW / (patchCount * 2);
-    int patchH = patternH * 3 / 4;
-    int patchY = startY + (patternH - patchH) / 2;
+    const QVector<GammaRef> refs = {
+        {1.8, qRound(255.0 * qPow(0.5, 1.0 / 1.8)), false},
+        {2.0, qRound(255.0 * qPow(0.5, 1.0 / 2.0)), false},
+        {2.2, qRound(255.0 * qPow(0.5, 1.0 / 2.2)), true},  // 186
+        {2.4, qRound(255.0 * qPow(0.5, 1.0 / 2.4)), false},
+        {2.6, qRound(255.0 * qPow(0.5, 1.0 / 2.6)), false}
+    };
 
-    for (int i = 0; i < patchCount; ++i) {
-        double g = gammaSteps[i].first;
-        int rgb = qRound(255.0 * std::pow(0.5, 1.0 / g));
-        int px = startX + (2 * i + 1) * (patternW / (patchCount * 2 + 1));
+    int patchSize = qMin(130, (w - 80) / refs.size());
+    int totalW = refs.size() * (patchSize + 20) - 20;
+    int startX = (w - totalW) / 2;
+    int startY = h / 2 - patchSize / 2;
 
-        QRect patchRect(px, patchY, patchW, patchH);
-        p.fillRect(patchRect, QColor(rgb, rgb, rgb));
-        p.setPen(g == 2.2 ? QColor(59, 130, 246) : QColor(80, 80, 80));
-        p.drawRect(patchRect);
+    for (int i = 0; i < refs.size(); ++i) {
+        int x = startX + i * (patchSize + 20);
+        QRect patchRect(x, startY, patchSize, patchSize);
 
-        // Label above or inside patch
-        p.setPen(QColor(0, 0, 0));
-        p.setFont(QFont("SansSerif", 10, g == 2.2 ? QFont::Bold : QFont::Normal));
-        p.drawText(patchRect, Qt::AlignCenter, gammaSteps[i].second);
+        // Fill with solid gray
+        p.fillRect(patchRect, QColor(refs[i].grayVal, refs[i].grayVal, refs[i].grayVal));
+
+        // Highlight center target patch
+        if (refs[i].isTarget) {
+            p.setPen(QPen(QColor(59, 130, 246), 3));
+            p.drawRect(patchRect);
+        }
+
+        // Label box below
+        QRect lblRect(x - 10, startY + patchSize + 10, patchSize + 20, 42);
+        p.fillRect(lblRect, QColor(0, 0, 0, 200));
+        p.setPen(refs[i].isTarget ? QColor(96, 165, 250) : QColor(255, 255, 255));
+        p.setFont(QFont("SansSerif", 10, refs[i].isTarget ? QFont::Bold : QFont::Normal));
+        QString patchText = i18n->t("pat_gamma_patch_fmt").arg(QString::number(refs[i].gamma, 'f', 1));
+        if (refs[i].isTarget) {
+            patchText += "\n" + i18n->t("pat_gamma_target");
+        }
+        p.drawText(lblRect, Qt::AlignCenter, patchText);
     }
-
-    p.setPen(QColor(140, 140, 140));
-    p.setFont(QFont("SansSerif", 10));
-    p.drawText(QRect(0, startY + patternH + 15, w, 25), Qt::AlignCenter, "※ ガンマがズレている場合は、モニタOSDの「ガンマ (Gamma)」設定または「カラーモード」を変更してください。");
 }
 
 void PatternWidget::drawGrayRampPattern(QPainter &p) {
-    p.fillRect(rect(), QColor(24, 24, 27));
+    auto *i18n = I18n::instance();
+    p.fillRect(rect(), QColor(20, 24, 33));
 
     int w = width();
     int h = height();
 
     p.setPen(QColor(240, 240, 240));
-    p.setFont(QFont("SansSerif", 14, QFont::Bold));
-    p.drawText(QRect(0, 30, w, 30), Qt::AlignCenter, "グレースケール & カラーバランス (Grayscale & Color Ramp)");
+    p.setFont(QFont("SansSerif", 13, QFont::Bold));
+    p.drawText(QRect(0, 25, w, 28), Qt::AlignCenter, i18n->t("pat_gray_title"));
 
-    p.setFont(QFont("SansSerif", 11));
+    p.setFont(QFont("SansSerif", 10));
     p.setPen(QColor(160, 160, 160));
-    p.drawText(QRect(0, 65, w, 25), Qt::AlignCenter, "※ 各階調が滑らかに変化し、中間に緑やピンク等の不自然な色被りがないことを確認してください。");
+    p.drawText(QRect(0, 55, w, 22), Qt::AlignCenter, i18n->t("pat_gray_desc"));
 
-    int rampW = qMin(800, w - 80);
-    int startX = (w - rampW) / 2;
-    int currentY = 110;
+    int margin = 50;
+    int usableW = w - 2 * margin;
+    int startY = 95;
 
     // 1. 32-step grayscale bar
-    int stepBarH = 45;
-    int steps = 32;
-    int stepW = rampW / steps;
-    for (int i = 0; i < steps; ++i) {
-        int val = (i * 255) / (steps - 1);
-        p.fillRect(QRect(startX + i * stepW, currentY, stepW, stepBarH), QColor(val, val, val));
-    }
-    p.setPen(QColor(80, 80, 80));
-    p.drawRect(startX, currentY, steps * stepW, stepBarH);
     p.setPen(QColor(180, 180, 180));
-    p.setFont(QFont("SansSerif", 9));
-    p.drawText(QRect(startX, currentY + stepBarH + 2, rampW, 20), Qt::AlignLeft, "32階調 ステップバー");
+    p.setFont(QFont("SansSerif", 9, QFont::Bold));
+    p.drawText(QRect(margin, startY, usableW, 20), Qt::AlignLeft, i18n->t("pat_gray_32step"));
+    startY += 24;
 
-    currentY += stepBarH + 30;
+    int steps = 32;
+    int stepW = usableW / steps;
+    int barH = 45;
+    for (int i = 0; i < steps; ++i) {
+        int val = qRound((i / 31.0) * 255.0);
+        p.fillRect(QRect(margin + i * stepW, startY, stepW, barH), QColor(val, val, val));
+    }
+    p.setPen(QColor(60, 60, 60));
+    p.drawRect(margin, startY, steps * stepW, barH);
+    startY += barH + 20;
 
     // 2. Smooth continuous grayscale gradient
-    int smoothBarH = 45;
-    QLinearGradient grayGrad(startX, 0, startX + rampW, 0);
+    p.setPen(QColor(180, 180, 180));
+    p.drawText(QRect(margin, startY, usableW, 20), Qt::AlignLeft, i18n->t("pat_gray_smooth"));
+    startY += 24;
+
+    QLinearGradient grayGrad(margin, 0, margin + usableW, 0);
     grayGrad.setColorAt(0, QColor(0, 0, 0));
     grayGrad.setColorAt(1, QColor(255, 255, 255));
-    p.fillRect(QRect(startX, currentY, rampW, smoothBarH), grayGrad);
-    p.setPen(QColor(80, 80, 80));
-    p.drawRect(startX, currentY, rampW, smoothBarH);
+    p.fillRect(QRect(margin, startY, usableW, barH), grayGrad);
+    p.setPen(QColor(60, 60, 60));
+    p.drawRect(margin, startY, usableW, barH);
+    startY += barH + 20;
+
+    // 3. RGB Channel Linearity
     p.setPen(QColor(180, 180, 180));
-    p.drawText(QRect(startX, currentY + smoothBarH + 2, rampW, 20), Qt::AlignLeft, "連続無段階 グレースケール (バンディング・階調跳びの確認)");
+    p.drawText(QRect(margin, startY, usableW, 20), Qt::AlignLeft, i18n->t("pat_gray_rgb"));
+    startY += 24;
 
-    currentY += smoothBarH + 30;
-
-    // 3. Red, Green, Blue individual gradients
-    int rgbBarH = 26;
+    int rgbH = 22;
     // Red
-    QLinearGradient rGrad(startX, 0, startX + rampW, 0);
+    QLinearGradient rGrad(margin, 0, margin + usableW, 0);
     rGrad.setColorAt(0, QColor(0, 0, 0));
     rGrad.setColorAt(1, QColor(255, 0, 0));
-    p.fillRect(QRect(startX, currentY, rampW, rgbBarH), rGrad);
-    currentY += rgbBarH + 4;
+    p.fillRect(QRect(margin, startY, usableW, rgbH), rGrad);
 
     // Green
-    QLinearGradient gGrad(startX, 0, startX + rampW, 0);
+    QLinearGradient gGrad(margin, 0, margin + usableW, 0);
     gGrad.setColorAt(0, QColor(0, 0, 0));
     gGrad.setColorAt(1, QColor(0, 255, 0));
-    p.fillRect(QRect(startX, currentY, rampW, rgbBarH), gGrad);
-    currentY += rgbBarH + 4;
+    p.fillRect(QRect(margin, startY + rgbH + 6, usableW, rgbH), gGrad);
 
     // Blue
-    QLinearGradient bGrad(startX, 0, startX + rampW, 0);
+    QLinearGradient bGrad(margin, 0, margin + usableW, 0);
     bGrad.setColorAt(0, QColor(0, 0, 0));
     bGrad.setColorAt(1, QColor(0, 0, 255));
-    p.fillRect(QRect(startX, currentY, rampW, rgbBarH), bGrad);
-    currentY += rgbBarH + 4;
-
-    p.setPen(QColor(180, 180, 180));
-    p.drawText(QRect(startX, currentY + 2, rampW, 20), Qt::AlignLeft, "RGB個別チャンネル階調 (各原色のリニアリティ確認)");
+    p.fillRect(QRect(margin, startY + 2 * (rgbH + 6), usableW, rgbH), bGrad);
 }
 
 void PatternWidget::drawColorUniformityPattern(QPainter &p) {
-    QColor fill;
+    auto *i18n = I18n::instance();
+    QColor fillCol;
     QString colorName;
+
     switch (m_uniformityColor) {
-    case UniformityColor::White: fill = QColor(255, 255, 255); colorName = "ホワイト (100% White)"; break;
-    case UniformityColor::Gray50: fill = QColor(128, 128, 128); colorName = "ニュートラルグレー (50% Gray)"; break;
-    case UniformityColor::Black: fill = QColor(0, 0, 0); colorName = "ブラック (0% Black)"; break;
-    case UniformityColor::Red: fill = QColor(255, 0, 0); colorName = "レッド (Pure Red)"; break;
-    case UniformityColor::Green: fill = QColor(0, 255, 0); colorName = "グリーン (Pure Green)"; break;
-    case UniformityColor::Blue: fill = QColor(0, 0, 255); colorName = "ブルー (Pure Blue)"; break;
-    case UniformityColor::Cyan: fill = QColor(0, 255, 255); colorName = "シアン (Pure Cyan)"; break;
-    case UniformityColor::Magenta: fill = QColor(255, 0, 255); colorName = "マゼンタ (Pure Magenta)"; break;
-    case UniformityColor::Yellow: fill = QColor(255, 255, 0); colorName = "イエロー (Pure Yellow)"; break;
+    case UniformityColor::White:
+        fillCol = QColor(255, 255, 255);
+        colorName = i18n->t("color_white");
+        break;
+    case UniformityColor::Gray50:
+        fillCol = QColor(128, 128, 128);
+        colorName = i18n->t("color_gray50");
+        break;
+    case UniformityColor::Black:
+        fillCol = QColor(0, 0, 0);
+        colorName = i18n->t("color_black");
+        break;
+    case UniformityColor::Red:
+        fillCol = QColor(255, 0, 0);
+        colorName = i18n->t("color_red");
+        break;
+    case UniformityColor::Green:
+        fillCol = QColor(0, 255, 0);
+        colorName = i18n->t("color_green");
+        break;
+    case UniformityColor::Blue:
+        fillCol = QColor(0, 0, 255);
+        colorName = i18n->t("color_blue");
+        break;
+    case UniformityColor::Cyan:
+        fillCol = QColor(0, 255, 255);
+        colorName = i18n->t("color_cyan");
+        break;
+    case UniformityColor::Magenta:
+        fillCol = QColor(255, 0, 255);
+        colorName = i18n->t("color_magenta");
+        break;
+    case UniformityColor::Yellow:
+        fillCol = QColor(255, 255, 0);
+        colorName = i18n->t("color_yellow");
+        break;
     }
 
-    p.fillRect(rect(), fill);
+    p.fillRect(rect(), fillCol);
 
-    // Subtle center hint if HUD is hidden
-    if (!m_hudVisible) {
-        QColor textCol = (m_uniformityColor == UniformityColor::White || m_uniformityColor == UniformityColor::Yellow || m_uniformityColor == UniformityColor::Cyan)
-                             ? QColor(100, 100, 100, 160)
-                             : QColor(200, 200, 200, 160);
-        p.setPen(textCol);
-        p.setFont(QFont("SansSerif", 11));
-        p.drawText(QRect(0, height() - 40, width(), 30), Qt::AlignCenter, QString("色均一性 / ドット抜け検査: %1 ( [C] キーで色切り替え )").arg(colorName));
-    }
+    // Subtle small tag in top left indicating current color & hint
+    QRect tagRect(20, 20, 360, 40);
+    p.fillRect(tagRect, QColor(0, 0, 0, 180));
+    p.setPen(QColor(255, 255, 255));
+    p.setFont(QFont("SansSerif", 10, QFont::Bold));
+    p.drawText(QRect(30, 24, 340, 18), Qt::AlignLeft, QString("%1: %2").arg(i18n->t("step6_short"), colorName));
+    p.setFont(QFont("SansSerif", 8));
+    p.setPen(QColor(200, 200, 200));
+    p.drawText(QRect(30, 42, 340, 16), Qt::AlignLeft, i18n->t("color_unif_hint"));
 }
 
 void PatternWidget::drawSharpnessPattern(QPainter &p) {
+    auto *i18n = I18n::instance();
     p.fillRect(rect(), QColor(128, 128, 128));
 
     int w = width();
@@ -430,11 +475,11 @@ void PatternWidget::drawSharpnessPattern(QPainter &p) {
 
     p.setPen(QColor(255, 255, 255));
     p.setFont(QFont("SansSerif", 14, QFont::Bold));
-    p.drawText(QRect(0, 30, w, 30), Qt::AlignCenter, "シャープネス / フォーカス (Sharpness & Moire) 調整パターン");
+    p.drawText(QRect(0, 35, w, 30), Qt::AlignCenter, i18n->t("pat_sharp_title"));
 
-    p.setFont(QFont("SansSerif", 11));
+    p.setFont(QFont("SansSerif", 10));
     p.setPen(QColor(230, 230, 230));
-    p.drawText(QRect(0, 65, w, 25), Qt::AlignCenter, "※ 文字や線の輪郭に不自然な白フチ（オーバーシュート/リンギング）やモアレがないか確認してください。");
+    p.drawText(QRect(0, 65, w, 25), Qt::AlignCenter, i18n->t("pat_sharp_desc"));
 
     int boxSize = 160;
     int centerX = w / 2;
@@ -477,6 +522,7 @@ void PatternWidget::drawSharpnessPattern(QPainter &p) {
 }
 
 void PatternWidget::drawGeometryPattern(QPainter &p) {
+    auto *i18n = I18n::instance();
     p.fillRect(rect(), QColor(0, 0, 0));
 
     int w = width();
@@ -512,10 +558,11 @@ void PatternWidget::drawGeometryPattern(QPainter &p) {
 
     p.setPen(QColor(255, 255, 255));
     p.setFont(QFont("SansSerif", 12, QFont::Bold));
-    p.drawText(QRect(0, h / 2 - 30, w, 25), Qt::AlignCenter, "画面比率 & オーバースキャン (1:1 ピクセルマッピング) 検査");
+    p.drawText(QRect(0, h / 2 - 30, w, 25), Qt::AlignCenter, i18n->t("pat_geom_title"));
 }
 
 void PatternWidget::drawHudOverlay(QPainter &p) {
+    auto *i18n = I18n::instance();
     int w = width();
     int h = height();
 
@@ -539,7 +586,7 @@ void PatternWidget::drawHudOverlay(QPainter &p) {
     int contentY = cardY + 20;
 
     QString stepBadge = (m_currentStep >= 0 && m_totalSteps > 0)
-                            ? QString("ステップ %1 / %2 : ").arg(m_currentStep + 1).arg(m_totalSteps)
+                            ? i18n->t("hud_step_prefix").arg(m_currentStep + 1).arg(m_totalSteps)
                             : "";
     p.setPen(QColor(96, 165, 250)); // Blue 400
     p.setFont(QFont("SansSerif", 13, QFont::Bold));
@@ -554,15 +601,15 @@ void PatternWidget::drawHudOverlay(QPainter &p) {
     if (!m_guideOsdTip.isEmpty()) {
         p.setPen(QColor(251, 191, 36)); // Amber 400
         p.setFont(QFont("SansSerif", 9, QFont::Bold));
-        p.drawText(QRect(contentX, contentY + 74, cardW - 180, 24), Qt::AlignLeft | Qt::AlignVCenter, "💡 OSD操作: " + m_guideOsdTip);
+        p.drawText(QRect(contentX, contentY + 74, cardW - 180, 24), Qt::AlignLeft | Qt::AlignVCenter, i18n->t("hud_osd_tip") + m_guideOsdTip);
     }
 
     // Shortcut hints at card bottom
     p.setPen(QColor(148, 163, 184)); // Slate 400
     p.setFont(QFont("SansSerif", 8));
-    QString shortcuts = "[Space/Enter] 次へ   [Backspace] 前へ   [H] ガイド表示切替   [F] 全画面   [Esc] 戻る";
+    QString shortcuts = i18n->t("hud_shortcuts");
     if (m_patternType == PatternType::ColorUniformity) {
-        shortcuts = "[C] 色切り替え   " + shortcuts;
+        shortcuts = i18n->t("hud_shortcuts_color") + shortcuts;
     }
     p.drawText(QRect(contentX, cardY + cardH - 24, cardW - 48, 18), Qt::AlignLeft, shortcuts);
 
@@ -582,14 +629,14 @@ void PatternWidget::drawHudOverlay(QPainter &p) {
     p.fillPath(prevBtnPath, QColor(51, 65, 85)); // Slate 700
     p.setPen(QColor(203, 213, 225));
     p.setFont(QFont("SansSerif", 9, QFont::Bold));
-    p.drawText(m_btnPrevRect, Qt::AlignCenter, "◀ 前へ");
+    p.drawText(m_btnPrevRect, Qt::AlignCenter, i18n->t("hud_btn_prev"));
 
     // Next Button
     QPainterPath nextBtnPath;
     nextBtnPath.addRoundedRect(m_btnNextRect, 8, 8);
     p.fillPath(nextBtnPath, QColor(37, 99, 235)); // Blue 600
     p.setPen(QColor(255, 255, 255));
-    p.drawText(m_btnNextRect, Qt::AlignCenter, "次へ ▶");
+    p.drawText(m_btnNextRect, Qt::AlignCenter, (m_currentStep >= 0 && m_currentStep == m_totalSteps - 1) ? i18n->t("btn_wizard_finish") : i18n->t("hud_btn_next"));
 
     // Close button (Top-Right of screen)
     m_btnCloseRect = QRect(w - 50, 15, 35, 35);

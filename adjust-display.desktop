@@ -2,8 +2,10 @@
 Version=1.0
 Type=Application
 Name=AdjustDisplay
-GenericName=ディスプレイ調整ツール
-Comment=Ubuntu ディスプレイ視覚的キャリブレーション & テストパターン
+GenericName=Display Calibration Tool
+GenericName[ja]=ディスプレイ調整ツール
+Comment=Visual display calibration and test patterns for Ubuntu Linux
+Comment[ja]=Ubuntu ディスプレイ視覚的キャリブレーション & テストパターン
 Exec=adjust-display
 Icon=video-display
 Terminal=false

@@ -8,7 +8,7 @@
 #include <QTabWidget>
 #include <QListWidget>
 #include <QGroupBox>
-#include <QStackedWidget>
+#include <QScrollArea>
 #include "screen_manager.h"
 #include "hardware_bridge.h"
 #include "wizard_controller.h"
@@ -34,6 +34,9 @@ private slots:
     void onBrightnessSliderMoved(int val);
     void onContrastSliderMoved(int val);
 
+    void onLanguageComboChanged(int index);
+    void retranslateUi();
+
 private:
     void setupUi();
     void applyTheme();
@@ -47,15 +50,17 @@ private:
     HardwareBridge *m_hardwareBridge = nullptr;
     WizardController *m_wizard = nullptr;
 
-    // UI Widgets
+    // Header UI Widgets
     QComboBox *m_screenCombo = nullptr;
     QPushButton *m_btnIdentify = nullptr;
     QPushButton *m_btnIdentifyAll = nullptr;
     QPushButton *m_btnRefreshScreens = nullptr;
+    QComboBox *m_langCombo = nullptr;
 
     QTabWidget *m_tabWidget = nullptr;
 
     // Wizard Tab UI
+    QLabel *m_lblWizardSidebarTitle = nullptr;
     QListWidget *m_stepList = nullptr;
     QLabel *m_wizardTitleLabel = nullptr;
     QLabel *m_wizardDescLabel = nullptr;
@@ -65,14 +70,32 @@ private:
     QPushButton *m_btnWizardNext = nullptr;
     QPushButton *m_btnWizardFullscreen = nullptr;
 
+    // Explorer Tab UI
+    struct ExplorerCardWidgets {
+        PatternType type;
+        QLabel *titleLabel;
+        QLabel *descLabel;
+        QPushButton *actionBtn;
+    };
+    QVector<ExplorerCardWidgets> m_explorerCards;
+
     // Hardware Tab UI
+    QGroupBox *m_groupScreenInfo = nullptr;
+    QLabel *m_lblScreenModelHeader = nullptr;
     QLabel *m_lblScreenModel = nullptr;
+    QLabel *m_lblScreenResHeader = nullptr;
     QLabel *m_lblScreenRes = nullptr;
-    QLabel *m_lblScreenDpi = nullptr;
+    QLabel *m_lblScreenRateHeader = nullptr;
     QLabel *m_lblScreenRate = nullptr;
+    QLabel *m_lblScreenDpiHeader = nullptr;
+    QLabel *m_lblScreenDpi = nullptr;
+
+    QGroupBox *m_groupHwCtrl = nullptr;
     QLabel *m_lblDdcStatus = nullptr;
+    QLabel *m_lblBrightnessHeader = nullptr;
     QSlider *m_sliderBrightness = nullptr;
     QLabel *m_lblBrightnessVal = nullptr;
+    QLabel *m_lblContrastHeader = nullptr;
     QSlider *m_sliderContrast = nullptr;
     QLabel *m_lblContrastVal = nullptr;
     QPushButton *m_btnResetSoftware = nullptr;

@@ -12,6 +12,8 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Core Gui DBus)
 
 set(SOURCES
     src/main.cpp
+    src/i18n.h
+    src/i18n.cpp
     src/pattern_types.h
     src/screen_manager.h
     src/screen_manager.cpp

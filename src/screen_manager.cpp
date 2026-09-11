@@ -1,66 +1,14 @@
 #include "screen_manager.h"
+#include "i18n.h"
 #include <QGuiApplication>
-#include <QWidget>
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QTimer>
-#include <QGraphicsDropShadowEffect>
-#include <QPainter>
-#include <QPainterPath>
-
-namespace {
-class IdentifyBannerWidget : public QWidget {
-public:
-    IdentifyBannerWidget(const ScreenInfo &info, QWidget *parent = nullptr)
-        : QWidget(parent, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::SubWindow | Qt::Tool) {
-        setAttribute(Qt::WA_TranslucentBackground);
-        setAttribute(Qt::WA_ShowWithoutActivating);
-        setAttribute(Qt::WA_DeleteOnClose);
-
-        auto *layout = new QVBoxLayout(this);
-        layout->setContentsMargins(40, 30, 40, 30);
-        layout->setAlignment(Qt::AlignCenter);
-
-        auto *numLabel = new QLabel(QString("🖥️ ディスプレイ %1").arg(info.index + 1), this);
-        numLabel->setStyleSheet("color: #60a5fa; font-size: 32px; font-weight: bold;");
-        numLabel->setAlignment(Qt::AlignCenter);
-        layout->addWidget(numLabel);
-
-        QString detail = QString("%1 (%2x%3 @ %4Hz)\n%5")
-                             .arg(info.name)
-                             .arg(info.geometry.width())
-                             .arg(info.geometry.height())
-                             .arg(info.refreshRate)
-                             .arg(info.isPrimary ? "[プライマリディスプレイ]" : "");
-        auto *detailLabel = new QLabel(detail.trimmed(), this);
-        detailLabel->setStyleSheet("color: #e2e8f0; font-size: 18px; font-weight: 500;");
-        detailLabel->setAlignment(Qt::AlignCenter);
-        layout->addWidget(detailLabel);
-
-        resize(460, 180);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-
-        QPainterPath path;
-        path.addRoundedRect(rect().adjusted(2, 2, -2, -2), 16, 16);
-
-        QColor bg(15, 23, 42, 235); // Slate 900 translucent
-        painter.fillPath(path, bg);
-
-        QPen pen(QColor(59, 130, 246, 200), 2); // Blue 500 border
-        painter.setPen(pen);
-        painter.drawPath(path);
-    }
-};
-}
+#include <QDebug>
 
 ScreenManager::ScreenManager(QObject *parent) : QObject(parent) {
-    connect(qApp, &QGuiApplication::screenAdded, this, &ScreenManager::onScreenAdded);
-    connect(qApp, &QGuiApplication::screenRemoved, this, &ScreenManager::onScreenRemoved);
+    connect(qGuiApp, &QGuiApplication::screenAdded, this, &ScreenManager::onScreenAdded);
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this, &ScreenManager::onScreenRemoved);
 }
 
 ScreenManager::~ScreenManager() = default;
@@ -68,16 +16,14 @@ ScreenManager::~ScreenManager() = default;
 QVector<ScreenInfo> ScreenManager::getScreenList() const {
     QVector<ScreenInfo> list;
     const auto screens = QGuiApplication::screens();
-    const auto *primary = QGuiApplication::primaryScreen();
+    QScreen *primary = QGuiApplication::primaryScreen();
 
     for (int i = 0; i < screens.size(); ++i) {
-        auto *s = screens[i];
-        if (!s) continue;
-
+        QScreen *s = screens[i];
         ScreenInfo info;
         info.index = i;
         info.name = s->name();
-        info.model = s->model().isEmpty() ? s->name() : s->model();
+        info.model = s->model();
         info.manufacturer = s->manufacturer();
         info.geometry = s->geometry();
         info.refreshRate = qRound(s->refreshRate());
@@ -97,12 +43,12 @@ QScreen* ScreenManager::getScreen(int index) const {
     if (index >= 0 && index < screens.size()) {
         return screens[index];
     }
-    return QGuiApplication::primaryScreen();
+    return nullptr;
 }
 
 int ScreenManager::getPrimaryScreenIndex() const {
     const auto screens = QGuiApplication::screens();
-    const auto *primary = QGuiApplication::primaryScreen();
+    QScreen *primary = QGuiApplication::primaryScreen();
     for (int i = 0; i < screens.size(); ++i) {
         if (screens[i] == primary) {
             return i;
@@ -112,13 +58,60 @@ int ScreenManager::getPrimaryScreenIndex() const {
 }
 
 void ScreenManager::showIdentifyOverlay(int screenIndex, int durationMs) {
-    auto screens = getScreenList();
-    if (screenIndex < 0 || screenIndex >= screens.size()) return;
+    QScreen *target = getScreen(screenIndex);
+    if (!target) return;
 
-    auto *banner = new IdentifyBannerWidget(screens[screenIndex]);
-    const auto &geom = screens[screenIndex].geometry;
-    int x = geom.x() + (geom.width() - banner->width()) / 2;
-    int y = geom.y() + (geom.height() - banner->height()) / 2;
+    auto *i18n = I18n::instance();
+    auto screens = getScreenList();
+    const auto &info = screens[screenIndex];
+
+    // Create an identification banner
+    auto *banner = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    banner->setAttribute(Qt::WA_TranslucentBackground, true);
+    banner->setAttribute(Qt::WA_DeleteOnClose, true);
+
+    auto *layout = new QVBoxLayout(banner);
+    layout->setContentsMargins(0, 0, 0, 0);
+
+    auto *frame = new QFrame(banner);
+    frame->setStyleSheet(
+        "background-color: rgba(15, 23, 42, 0.92);"
+        "border: 3px solid #3b82f6;"
+        "border-radius: 20px;"
+        "padding: 24px;"
+    );
+    auto *frameLayout = new QVBoxLayout(frame);
+    frameLayout->setAlignment(Qt::AlignCenter);
+
+    auto *numLabel = new QLabel(QString::number(screenIndex + 1), frame);
+    numLabel->setStyleSheet("font-size: 80px; font-weight: bold; color: #60a5fa; margin: 0;");
+    numLabel->setAlignment(Qt::AlignCenter);
+    frameLayout->addWidget(numLabel);
+
+    QString nameText = i18n->t("screen_id_banner")
+                           .arg(screenIndex + 1)
+                           .arg(info.name)
+                           .arg(info.geometry.width())
+                           .arg(info.geometry.height())
+                           .arg(info.refreshRate);
+    auto *nameLabel = new QLabel(nameText, frame);
+    nameLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #f8fafc; margin-top: 8px;");
+    nameLabel->setAlignment(Qt::AlignCenter);
+    frameLayout->addWidget(nameLabel);
+
+    if (info.isPrimary) {
+        auto *primLabel = new QLabel(i18n->t("screen_id_primary"), frame);
+        primLabel->setStyleSheet("font-size: 14px; color: #34d399; font-weight: 500;");
+        primLabel->setAlignment(Qt::AlignCenter);
+        frameLayout->addWidget(primLabel);
+    }
+
+    layout->addWidget(frame);
+
+    banner->adjustSize();
+    QRect geo = target->geometry();
+    int x = geo.x() + (geo.width() - banner->width()) / 2;
+    int y = geo.y() + (geo.height() - banner->height()) / 2;
     banner->move(x, y);
     banner->show();
 
